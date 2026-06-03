@@ -1,0 +1,24 @@
+# .gitignore
+.venv/
+__pycache__/
+*.pyc
+.env
+data/raw/*
+data/processed/*
+data/vector_store/*
+data/traces/*
+evals/reports/*
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Coding agents
+.claude/
+.cursor/
+.codex/
+.opencode/
+
+# ...
+NOTES.md
