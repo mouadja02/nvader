@@ -1,8 +1,9 @@
 # NVIDIA Agentic Research Engineer
 ![Status](https://img.shields.io/badge/status-active_build-green)
+![CI](https://github.com/mouadja02/nvader/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![Focus](https://img.shields.io/badge/focus-agentic_AI-76B900)
-
+  
 A production-style Agentic AI Research and Engineering Assistant built while preparing for the NVIDIA-Certified Professional: Agentic AI certification.
 
 ## Purpose
@@ -40,25 +41,42 @@ It helps turn technical resources into grounded answers, implementation plans, c
 
 ## Quickstart
 
+**Prerequisites:** Python 3.11+, `make` (Linux/macOS built-in; Windows: install via `choco install make` or use Git Bash).
+
 ```bash
+# 1. Clone the repo
+git clone https://github.com/mouadja02/nvader.git
+cd nvader
+
+# 2. Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Linux / macOS
+# .venv\Scripts\activate          # Windows (PowerShell)
+
+# 3. Install the package with dev dependencies
 make install
-nvader info
-nvader roadmap
+
+# 4. Verify everything works
 make test
 make lint
+
+# 5. Try the CLI
+nvader info
+nvader roadmap
 ```
 
 ## Developer Workflow
 
-```bash
-make install   # install package in editable mode with dev dependencies
-make test      # run tests
-make lint      # run Ruff checks
-make check     # run lint + tests
-make clean     # remove local cache artifacts
-```
+All commands run through the `.venv` Python automatically via the Makefile:
+
+| Command        | What it does                                      |
+|----------------|---------------------------------------------------|
+| `make install` | Install package in editable mode with dev deps    |
+| `make test`    | Run tests with pytest                             |
+| `make lint`    | Run Ruff linter checks                            |
+| `make format`  | Auto-format code with Ruff                        |
+| `make check`   | Run lint + tests together                         |
+| `make clean`   | Remove `.pytest_cache` and `__pycache__` dirs     |
 
 ## Current Status
 
