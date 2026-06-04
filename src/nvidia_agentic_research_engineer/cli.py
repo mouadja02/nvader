@@ -1,7 +1,6 @@
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 
 from nvidia_agentic_research_engineer.config import AppConfig, ProjectTOML
 
