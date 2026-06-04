@@ -1,4 +1,7 @@
 # NVIDIA Agentic Research Engineer
+![Status](https://img.shields.io/badge/status-active_build-green)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
+![Focus](https://img.shields.io/badge/focus-agentic_AI-76B900)
 
 A production-style Agentic AI Research and Engineering Assistant built while preparing for the NVIDIA-Certified Professional: Agentic AI certification.
 
@@ -40,11 +43,21 @@ It helps turn technical resources into grounded answers, implementation plans, c
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-
+make install
 nvader info
 nvader roadmap
-pytest
+make test
+make lint
+```
+
+## Developer Workflow
+
+```bash
+make install   # install package in editable mode with dev dependencies
+make test      # run tests
+make lint      # run Ruff checks
+make check     # run lint + tests
+make clean     # remove local cache artifacts
 ```
 
 ## Current Status
