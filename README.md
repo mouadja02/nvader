@@ -80,4 +80,35 @@ All commands run through the `.venv` Python automatically via the Makefile:
 
 ## Current Status
 
-Day 1: Project foundation and architecture skeleton.
+### Implemented
+
+**Core (`src/nvidia_agentic_research_engineer/core/`)**
+- `Document` Pydantic model with UUID, timestamps, and metadata fields
+- `DocumentType` enum covering `text`, `markdown`, `html`, `pdf`, `url`, `repo`, `paper`, `image`
+- `short_preview()` helper for truncated content display
+
+**Ingestion (`src/nvidia_agentic_research_engineer/ingestion/`)**
+- `load_text_file(path)` — reads a plain-text file into a `Document`
+- `load_markdown_file(path)` — reads a Markdown file into a `Document`
+
+**CLI (`nvader`)**
+- `nvader info` — displays project identity and active config
+- `nvader roadmap` — prints the 8-week certification build plan
+
+**Config (`src/nvidia_agentic_research_engineer/config.py`)**
+- `AppConfig` — typed settings for data directories, retrieval, citations, and retries
+- `ProjectTOML` — reads name, version, and authors from `pyproject.toml`
+
+**Tests (`tests/`)**
+- `test_documents.py` — Document creation, type validation, preview truncation
+- `test_ingestion_loaders.py` — text and Markdown file loading
+- `test_cli.py` — `info` and `roadmap` CLI command assertions
+
+### In Progress / Up Next
+
+- RAG pipeline and vector store integration
+- ReAct-style tool-using agent
+- Short-term and long-term memory modules
+- Multi-agent workflows
+- Evaluation and benchmarking harness
+- NIM / NeMo Guardrails / Triton integration
