@@ -1,5 +1,5 @@
 import pytest
-from nvidia_agentic_research_engineer.core.documents import Document, DocumentChunk, DocumentType
+from nvidia_agentic_research_engineer.core.documents import Document, DocumentType
 from nvidia_agentic_research_engineer.ingestion.chunking import chunk_text, chunk_document, chunk_documents
 
 
