@@ -84,6 +84,35 @@ All modules below exist as empty packages, mapped to NVIDIA certification domain
 | `nvidia/`      | NIM endpoints, NeMo platform integration       | NVIDIA Platform            |
 | `api/`         | REST API surface for the agent                 | Deployment                 |
 
+## Ingestion and Chunking Pipeline
+
+Current flow:
+
+1. Load raw files from local resources.
+2. Normalize them into `Document` objects.
+3. Split documents into `DocumentChunk` objects.
+4. Preserve source, metadata, character offsets, and stable IDs.
+5. Prepare chunks for future embedding and retrieval.
+
+```
+files/docs/repos
+      |
+      v
+  loaders.py
+      |
+      v
+   Document
+      |
+      v
+  chunking.py
+      |
+      v
+ DocumentChunk
+      |
+      v
+future vector store / retriever
+```
+
 ## Data Layout
 
 ```

@@ -26,3 +26,13 @@ class Document(BaseModel):
     def short_preview(self, max_chars: int = 240) -> str:
         cleaned = " ".join(str(self.content).split())
         return cleaned[:max_chars] + ("..." if len(cleaned) > max_chars else "")
+    
+class DocumentChunk(BaseModel):
+    id: str
+    document_id: str
+    text: str
+    chunk_index: int
+    source: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    start_char: int | None = None
+    end_char: int | None = None

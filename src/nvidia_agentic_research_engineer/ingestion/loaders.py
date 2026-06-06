@@ -3,6 +3,7 @@ from nvidia_agentic_research_engineer.core.documents import Document
 
 
 def load_text_file(file_path: Path) -> Document:
+    file_path = Path(file_path)
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
     return Document(
@@ -13,6 +14,7 @@ def load_text_file(file_path: Path) -> Document:
     )
 
 def load_markdown_file(file_path: Path) -> Document:
+    file_path = Path(file_path)
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
     return Document(

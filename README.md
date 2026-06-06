@@ -65,6 +65,15 @@ nvader info
 nvader roadmap
 ```
 
+## Ingestion Pipeline
+
+Current ingestion capabilities:
+
+- Load `.txt` and `.md` files.
+- Normalize files into typed `Document` objects.
+- Split documents into source-aware `DocumentChunk` objects.
+- Preserve metadata for future RAG source attribution.
+
 ## Developer Workflow
 
 All commands run through the `.venv` Python automatically via the Makefile:
