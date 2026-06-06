@@ -1,8 +1,9 @@
+import hashlib
+import json
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-from uuid import uuid4
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 class DocumentType(str, Enum):
     TEXT = "text"
@@ -15,13 +16,30 @@ class DocumentType(str, Enum):
     IMAGE = "image"
 
 class Document(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4()))
+    id: str = Field(default="")
     title: str
     content: Any
     source: str
     document_type: DocumentType
     metadata: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_id(cls, values: dict) -> dict:
+        if isinstance(values, dict) and not values.get("id"):
+            hash_input = json.dumps(
+                {
+                    "title": str(values.get("title")),
+                    "content": str(values.get("content")),
+                    "source": str(values.get("source")),
+                    "document_type": str(values.get("document_type")),
+                    "metadata": values.get("metadata", {}),
+                },
+                sort_keys=True,
+            )
+            values["id"] = hashlib.sha256(hash_input.encode()).hexdigest()
+        return values
 
     def short_preview(self, max_chars: int = 240) -> str:
         cleaned = " ".join(str(self.content).split())
