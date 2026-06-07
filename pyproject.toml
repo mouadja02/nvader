@@ -9,7 +9,8 @@ dependencies = [
   "pydantic>=2.7.0",
   "rich>=13.7.0",
   "python-dotenv>=1.0.1",
-  "toml"
+  "toml",
+  "openai",
 ]
 
 [project.optional-dependencies]

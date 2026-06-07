@@ -19,6 +19,7 @@ build/
 .cursor/
 .codex/
 .opencode/
+.vscode/
 
 # ...
 NOTES.md
