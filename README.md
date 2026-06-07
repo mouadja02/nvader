@@ -69,10 +69,12 @@ nvader roadmap
 
 Current ingestion capabilities:
 
-- Load `.txt` and `.md` files.
-- Normalize files into typed `Document` objects.
-- Split documents into source-aware `DocumentChunk` objects.
-- Preserve metadata for future RAG source attribution.
+- Load `.txt` and `.md` files into typed `Document` objects.
+- SHA-256 content-derived stable IDs (reproducible across runs).
+- Split documents into `DocumentChunk` objects with character offsets.
+- Preserve source, metadata, and chunk index for downstream retrieval.
+- Offline deterministic embeddings via `HashEmbedder` (SHA-256, 384-dim).
+- NVIDIA NIM embedding endpoint via `Embedder` (OpenAI-compatible API, requires `NVIDIA_API_KEY`).
 
 ## Developer Workflow
 
@@ -92,13 +94,26 @@ All commands run through the `.venv` Python automatically via the Makefile:
 ### Implemented
 
 **Core (`src/nvidia_agentic_research_engineer/core/`)**
-- `Document` Pydantic model with UUID, timestamps, and metadata fields
+- `Document` Pydantic model — SHA-256 content-derived ID, UTC timestamp, typed metadata
 - `DocumentType` enum covering `text`, `markdown`, `html`, `pdf`, `url`, `repo`, `paper`, `image`
+- `DocumentChunk` — slice of a Document with stable ID, `chunk_index`, and character offsets
 - `short_preview()` helper for truncated content display
 
 **Ingestion (`src/nvidia_agentic_research_engineer/ingestion/`)**
 - `load_text_file(path)` — reads a plain-text file into a `Document`
 - `load_markdown_file(path)` — reads a Markdown file into a `Document`
+- `chunk_text(text, *, chunk_size, chunk_overlap)` — low-level text splitter with offset tracking
+- `chunk_document(document, ...)` — converts a `Document` into `DocumentChunk` list
+- `chunk_documents(documents, ...)` — batch chunking over a sequence of documents
+
+**Retrieval (`src/nvidia_agentic_research_engineer/retrieval/`)**
+- `EmbedderProtocol` — `@runtime_checkable` Protocol for any embedder implementation
+- `HashEmbedder` — offline SHA-256-based deterministic embedder (384 dims, PYTHONHASHSEED-stable)
+- `Embedder` — NVIDIA NIM OpenAI-compatible embedding endpoint wrapper; lazy-imports `openai`
+- `get_embedder(model, api_key)` — factory returning `Embedder` if `NVIDIA_API_KEY` is set, else `HashEmbedder`
+- `SearchResult` — frozen Pydantic model for retrieval results
+- `RetrievalQuery` — typed query model with `top_k` bounds validation
+- `RetrievalConfig` — embedding model, index, threshold, and hybrid-search configuration
 
 **CLI (`nvader`)**
 - `nvader info` — displays project identity and active config
@@ -111,13 +126,15 @@ All commands run through the `.venv` Python automatically via the Makefile:
 **Tests (`tests/`)**
 - `test_documents.py` — Document creation, type validation, preview truncation
 - `test_ingestion_loaders.py` — text and Markdown file loading
+- `test_chunking.py` — chunk_text, chunk_document, chunk_documents
+- `test_retrieval_embeddings.py` — 45 tests: HashEmbedder (SHA-256 stability, dimensions, determinism), Embedder (mock API, error handling), EmbedderProtocol conformance, SearchResult/RetrievalQuery/RetrievalConfig models
 - `test_cli.py` — `info` and `roadmap` CLI command assertions
 
 ### In Progress / Up Next
 
-- RAG pipeline and vector store integration
-- ReAct-style tool-using agent
-- Short-term and long-term memory modules
+- ReAct-style tool-using agent (`agents/`, `tools/`)
+- Short-term and long-term memory modules (`memory/`)
 - Multi-agent workflows
-- Evaluation and benchmarking harness
-- NIM / NeMo Guardrails / Triton integration
+- Evaluation and benchmarking harness (`evaluation/`)
+- NIM / NeMo Guardrails / Triton integration (`nvidia/`, `guardrails/`)
+- Vector store adapter and end-to-end RAG pipeline
