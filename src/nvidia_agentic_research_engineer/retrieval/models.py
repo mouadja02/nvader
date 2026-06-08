@@ -27,3 +27,6 @@ class RetrievalConfig(BaseModel):
     top_k: int = Field(default=5, ge=1, le=100)
     similarity_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
     use_hybrid_search: bool = False
+
+
+__all__ = ["SearchResult", "RetrievalQuery", "RetrievalConfig"]

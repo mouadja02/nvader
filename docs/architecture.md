@@ -45,7 +45,8 @@ src/nvidia_agentic_research_engineer/
 ├── nvidia/             # NVIDIA platform integrations (NIM, etc.) (planned)
 ├── retrieval/          # Vector search & RAG retrieval logic
 │   ├── models.py       # SearchResult, RetrievalQuery, RetrievalConfig
-│   └── embeddings.py   # EmbedderProtocol, HashEmbedder, Embedder, get_embedder
+│   ├── embeddings.py   # EmbedderProtocol, HashEmbedder, Embedder, get_embedder
+│   └── vector_store.py # cosine_similarity, InMemoryVectorStore, RetrievalResult
 └── tools/              # Tool definitions & registry (planned)
 ```
 
@@ -94,6 +95,11 @@ Two Pydantic models:
   - `Embedder` — NVIDIA NIM OpenAI-compatible endpoint wrapper; lazy-imports `openai` to stay testable without the package installed.
   - `get_embedder(model, api_key)` — factory: returns `Embedder` when `NVIDIA_API_KEY` is set, else `HashEmbedder`.
 
+- **`vector_store.py`**:
+  - `cosine_similarity(a, b)` — dependency-free cosine similarity helper; raises `ValueError` on mismatched lengths, returns `0.0` for zero-norm vectors.
+  - `InMemoryVectorStore` — stores `(DocumentChunk, embedding)` pairs; `add_chunks()` embeds and indexes chunks; `search(query, top_k)` returns ranked `RetrievalResult` list.
+  - `RetrievalResult` — frozen dataclass: `chunk`, `score`, `rank`; preserves source, offsets, chunk ID, and metadata for full attribution.
+
 ## Planned Modules (Stubbed)
 
 All modules below exist as empty packages, mapped to NVIDIA certification domains.
@@ -108,7 +114,7 @@ All modules below exist as empty packages, mapped to NVIDIA certification domain
 | `nvidia/`      | NIM endpoints, NeMo platform integration       | NVIDIA Platform            |
 | `api/`         | REST API surface for the agent                 | Deployment                 |
 
-## Ingestion and Chunking Pipeline
+## Ingestion, Embedding, and Retrieval Pipeline
 
 Current flow:
 
@@ -116,7 +122,13 @@ Current flow:
 2. Normalize them into typed `Document` objects (SHA-256 ID, UTC timestamp).
 3. Split documents into `DocumentChunk` objects with character offsets.
 4. Preserve source, metadata, and stable IDs for downstream retrieval.
-5. Chunks are ready for embedding via `HashEmbedder` (offline) or `Embedder` (NVIDIA NIM).
+5. Chunks are embedded via `HashEmbedder` (offline) or `Embedder` (NVIDIA NIM).
+6. Embedded chunks are indexed in `InMemoryVectorStore`.
+7. Queries are embedded and ranked by cosine similarity, returning top-k `RetrievalResult` objects with full source attribution.
+
+```text
+file -> Document -> DocumentChunk -> embedding -> vector store -> top-k RetrievalResult
+```
 
 ```mermaid
 flowchart TD
@@ -138,9 +150,12 @@ flowchart TD
     F --> G
 
     G["list[list[float]]\n384-dim vectors"]
-    G -.->|"planned"| H
+    G --> H
 
-    H["🗄️ Vector Store / Retriever"]
+    H["vector_store.py\nInMemoryVectorStore"]
+    H --> I
+
+    I["RetrievalResult[ ]\nrank · score · chunk · source · offsets"]
 ```
 
 ## Data Layout
@@ -174,6 +189,7 @@ Dev: `pytest ≥8.0`, `ruff ≥0.5`.
 | `test_ingestion_loaders.py`   | `load_text_file`, `load_markdown_file`         | —     |
 | `test_chunking.py`            | `chunk_text`, `chunk_document`, `chunk_documents` | —  |
 | `test_retrieval_embeddings.py`| `HashEmbedder`, `Embedder`, `EmbedderProtocol`, `SearchResult`, `RetrievalQuery`, `RetrievalConfig` | 45 |
+| `test_retrieval_vector_store.py` | `cosine_similarity`, `InMemoryVectorStore`, `RetrievalResult` | — |
 | `test_cli.py`                 | `nvader info`, `nvader roadmap`                | —     |
 
 ## Build Roadmap Alignment

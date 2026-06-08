@@ -114,6 +114,9 @@ All commands run through the `.venv` Python automatically via the Makefile:
 - `SearchResult` — frozen Pydantic model for retrieval results
 - `RetrievalQuery` — typed query model with `top_k` bounds validation
 - `RetrievalConfig` — embedding model, index, threshold, and hybrid-search configuration
+- In-memory vector retrieval over embedded chunks.
+- Cosine similarity ranking.
+- Source-attributed retrieval results for future RAG answers.
 
 **CLI (`nvader`)**
 - `nvader info` — displays project identity and active config
@@ -137,4 +140,20 @@ All commands run through the `.venv` Python automatically via the Makefile:
 - Multi-agent workflows
 - Evaluation and benchmarking harness (`evaluation/`)
 - NIM / NeMo Guardrails / Triton integration (`nvidia/`, `guardrails/`)
-- Vector store adapter and end-to-end RAG pipeline
+- ReAct-style tool-using agent (`agents/`, `tools/`)
+- Short-term and long-term memory modules (`memory/`)
+- Multi-agent workflows
+- Evaluation and benchmarking harness (`evaluation/`)
+- NIM / NeMo Guardrails / Triton integration (`nvidia/`, `guardrails/`)
+- End-to-end RAG answer synthesis (`retrieve_context()` + `ask` command)
+
+## Current RAG Capability
+
+```
+.txt/.md file
+    -> Document
+    -> DocumentChunk
+    -> HashEmbedder
+    -> InMemoryVectorStore
+    -> top-k RetrievalResult with source attribution
+```
