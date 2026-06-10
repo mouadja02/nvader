@@ -14,7 +14,7 @@ install:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e ".[dev]"
 	git clone https://github.com/microsoft/markitdown.git
-	cd markitdown && $(PYTHON) -m pip install 'packages/markitdown[pdf]'
+	$(PYTHON) -m pip install 'markitdown/packages/markitdown[pdf]'
 	rm -rf markitdown
 
 test:
