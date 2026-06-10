@@ -83,28 +83,27 @@ class TestHashEmbedder:
         assert HashEmbedder().embed_texts([text]) == HashEmbedder().embed_texts([text])
 
     def test_embed_texts_uses_sha256_not_python_hash(self):
-        """First embedding value must match what SHA-256 block expansion produces.
+        """Word hashing must use SHA-256 so embeddings are PYTHONHASHSEED-stable.
 
-        This test fails with the old ``hash()``-based implementation and passes
-        only when hashlib is used, catching PYTHONHASHSEED non-determinism.
+        Verify that the word 'probe' lands on the bucket determined by SHA-256.
         """
         import hashlib
 
-        text = "probe"
-        seed = hashlib.sha256(text.encode()).digest()
-        block = hashlib.sha256(seed + (0).to_bytes(4, "little")).digest()
-        expected_first = float(block[0]) / 128.0 - 1.0
-        result = self.embedder.embed_texts([text])
-        assert result[0][0] == pytest.approx(expected_first)
+        word = "probe"
+        h = int(hashlib.sha256(word.encode()).hexdigest(), 16)
+        expected_idx = h % HashEmbedder.EMBEDDING_DIM
+        result = self.embedder.embed_texts([word])
+        # The expected bucket should be non-zero (the only word)
+        assert result[0][expected_idx] != 0.0
 
     def test_all_dimensions_carry_signal(self):
-        """Dims beyond 64 must not be identical for all texts (old bit-shift bug)."""
-        texts = ["alpha", "beta", "gamma"]
-        results = self.embedder.embed_texts(texts)
-        # Pick a dimension well beyond 64 bits
-        dim = 200
-        values_at_dim = {emb[dim] for emb in results}
-        assert len(values_at_dim) > 1, "Dimensions beyond 64 carry no signal"
+        """Longer texts should populate dimensions across the full vector width."""
+        text = ("agentic AI certification exam study guide "
+                "vector database retrieval augmented generation "
+                "multi agent orchestration guardrails safety")
+        result = self.embedder.embed_texts([text])
+        nonzero = sum(1 for v in result[0] if v != 0.0)
+        assert nonzero > 5, "Embedding has too few active dimensions"
 
 
 # ---------------------------------------------------------------------------

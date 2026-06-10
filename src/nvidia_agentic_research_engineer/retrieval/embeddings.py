@@ -12,13 +12,12 @@ class EmbedderProtocol(Protocol):
 
 
 class HashEmbedder:
-    """Deterministic embedder using SHA-256 hashing — useful for testing and offline use.
+    """Deterministic embedder using feature hashing — useful for testing and offline use.
 
-    Unlike Python's built-in ``hash()``, SHA-256 is stable across processes and
-    Python versions regardless of ``PYTHONHASHSEED``, ensuring truly reproducible
-    embeddings.  Each dimension also carries independent signal because the vector
-    is built from successive SHA-256 blocks rather than bit-shifted bytes of a
-    single integer.
+    Uses a bag-of-words approach with the hashing trick: each lowercased word
+    is hashed to a dimension index, producing sparse-like vectors where texts
+    sharing vocabulary have high cosine similarity.  Fully deterministic across
+    processes and Python versions (relies on SHA-256, not built-in ``hash()``).
     """
     EMBEDDING_DIM = 384
 
@@ -30,24 +29,31 @@ class HashEmbedder:
         # Return a deterministic embedding for a single query string
         return self.hash_embed_texts([query])[0]
 
+    @staticmethod
+    def _tokenize(text: str) -> list[str]:
+        """Lowercase and split on non-alphanumeric characters."""
+        import re
+        return re.findall(r"[a-z0-9]+", text.lower())
+
     def hash_embed_texts(self, texts: list[str]) -> list[list[float]]:
-        # Generate deterministic fixed-dimension embeddings via SHA-256.
-        # Values are normalised to the range [-1.0, 1.0]
+        # Generate deterministic fixed-dimension embeddings via feature hashing.
+        # Each word is hashed to a bucket; texts sharing words yield similar vectors.
+
+        from math import sqrt as _sqrt
 
         embeddings = []
         for text in texts:
-            # Seed from SHA-256 of the input text (32 bytes, process-stable).
-            seed = hashlib.sha256(text.encode()).digest()
-            # Expand seed to EMBEDDING_DIM bytes using successive SHA-256 blocks.
-            raw: list[int] = []
-            counter = 0
-            while len(raw) < self.EMBEDDING_DIM:
-                block = hashlib.sha256(seed + counter.to_bytes(4, "little")).digest()
-                raw.extend(block)
-                counter += 1
-            # Normalise bytes [0, 255] → [-1.0, ~0.992].
-            normalized = [float(b) / 128.0 - 1.0 for b in raw[: self.EMBEDDING_DIM]]
-            embeddings.append(normalized)
+            vec = [0.0] * self.EMBEDDING_DIM
+            for word in self._tokenize(text):
+                h = int(hashlib.sha256(word.encode()).hexdigest(), 16)
+                idx = h % self.EMBEDDING_DIM
+                sign = 1.0 if (h // self.EMBEDDING_DIM) % 2 == 0 else -1.0
+                vec[idx] += sign
+            # L2-normalise so cosine similarity is just the dot product.
+            norm = _sqrt(sum(v * v for v in vec))
+            if norm > 0:
+                vec = [v / norm for v in vec]
+            embeddings.append(vec)
         return embeddings
 
 
