@@ -12,7 +12,7 @@ dependencies = [
   "toml",
   "openai",
   "dotenv",
-  "markitdown",
+  "markitdown[pdf]",
 ]
 
 [project.optional-dependencies]

@@ -10,15 +10,6 @@ $BIN    = "$PSScriptRoot\$VENV\Scripts"
 function Invoke-Install {
     & $PYTHON -m pip install --upgrade pip
     & $PYTHON -m pip install -e ".[dev]"
-    git clone https://github.com/microsoft/markitdown.git
-    if (Test-Path markitdown) {
-        Push-Location markitdown
-        & $PYTHON -m pip install "packages/markitdown[pdf]"
-        Pop-Location
-        Remove-Item -Recurse -Force markitdown
-    } else {
-        Write-Warning "markitdown clone failed — skipping markitdown install."
-    }
 }
 
 function Invoke-Test {

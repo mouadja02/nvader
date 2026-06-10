@@ -75,7 +75,7 @@ Current ingestion capabilities:
 - SHA-256 content-derived stable IDs (reproducible across runs).
 - Split documents into `DocumentChunk` objects with character offsets.
 - Preserve source, metadata, and chunk index for downstream retrieval.
-- Offline deterministic embeddings via `HashEmbedder` (SHA-256, 384-dim).
+- Offline deterministic embeddings via `HashEmbedder` (feature hashing, 384-dim).
 - **NVIDIA NIM embeddings** via `Embedder` (OpenAI-compatible API, requires `NVIDIA_API_KEY`). When the key is present `get_embedder()` automatically selects the NIM endpoint; otherwise falls back to `HashEmbedder` for fully offline use.
 
 ## Local Retrieval Demo
@@ -138,7 +138,7 @@ On Windows PowerShell, replace `make <target>` with `.\make.ps1 <target>`.
 
 **Retrieval (`src/nvidia_agentic_research_engineer/retrieval/`)**
 - `EmbedderProtocol` — `@runtime_checkable` Protocol for any embedder implementation
-- `HashEmbedder` — offline SHA-256-based deterministic embedder (384 dims, PYTHONHASHSEED-stable)
+- `HashEmbedder` — offline feature-hashing deterministic embedder (384 dims, SHA-256-based hashing trick for vocabulary-aware similarity)
 - `Embedder` — NVIDIA NIM OpenAI-compatible embedding endpoint wrapper (`nvidia/nv-embed-v1`); lazy-imports `openai`
 - `get_embedder(model, api_key)` — factory returning `Embedder` if `NVIDIA_API_KEY` is set, else `HashEmbedder`
 - `SearchResult` — frozen Pydantic model for retrieval results

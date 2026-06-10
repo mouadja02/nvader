@@ -103,7 +103,7 @@ Two Pydantic models:
 
 - **`embeddings.py`**:
   - `EmbedderProtocol` — `@runtime_checkable` Protocol; any class with `embed_texts` + `embed_query` satisfies it.
-  - `HashEmbedder` — fully offline, SHA-256-based, 384-dim deterministic embedder (stable across processes; all dimensions carry independent signal).
+  - `HashEmbedder` — fully offline, 384-dim deterministic embedder using feature hashing (bag-of-words with SHA-256 hashing trick); texts sharing vocabulary yield high cosine similarity, stable across processes.
   - `Embedder` — **NVIDIA NIM** OpenAI-compatible endpoint wrapper (`nvidia/nv-embed-v1`); lazy-imports `openai` to stay testable without the package installed.
   - `get_embedder(model, api_key)` — factory: returns `Embedder` when `NVIDIA_API_KEY` is set, else `HashEmbedder`.
 
@@ -146,7 +146,7 @@ Current flow:
 3. Load files into typed `Document` objects (SHA-256 ID, UTC timestamp).
 4. Split documents into `DocumentChunk` objects with character offsets.
 5. Preserve source, metadata, and stable IDs for downstream retrieval.
-6. Chunks are embedded via `HashEmbedder` (offline) or `Embedder` (NVIDIA NIM `nv-embed-v1`).
+6. Chunks are embedded via `HashEmbedder` (offline, feature hashing) or `Embedder` (NVIDIA NIM `nv-embed-v1`).
 7. Embedded chunks are indexed in `InMemoryVectorStore`.
 8. Queries are embedded and ranked by cosine similarity, returning top-k `RetrievalResult` objects with full source attribution.
 

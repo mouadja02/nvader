@@ -13,9 +13,6 @@ endif
 install:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e ".[dev]"
-	git clone https://github.com/microsoft/markitdown.git
-	$(PYTHON) -m pip install 'markitdown/packages/markitdown[pdf]'
-	rm -rf markitdown
 
 test:
 	$(PYTHON) -m pytest -q
