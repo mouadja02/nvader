@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import typer
 from dotenv import load_dotenv
 from rich.console import Console, Group
@@ -83,6 +84,7 @@ def search(
     chunk_size: int = typer.Option(500, "--chunk-size", help="Characters per chunk"),
     chunk_overlap: int = typer.Option(100, "--chunk-overlap", help="Overlap between chunks"),
     reconvert: bool = typer.Option(False, "--reconvert", help="Re-convert PDFs even if a cached .md already exists"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write results as JSON to this file path"),
 ) -> None:
     """Alias for search-on-file."""
     if not query.strip():
@@ -131,6 +133,26 @@ def search(
         )
 
     console.print(table)
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        payload = [
+            {
+                "rank": r.rank,
+                "score": r.score,
+                "source": r.chunk.source,
+                "start_char": r.chunk.start_char,
+                "end_char": r.chunk.end_char,
+                "chunk_id": r.chunk.id,
+                "document_id": r.chunk.document_id,
+                "chunk_index": r.chunk.chunk_index,
+                "text": r.chunk.text,
+                "metadata": r.chunk.metadata,
+            }
+            for r in results
+        ]
+        output.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        console.print(f"[dim]Results saved to {output}[/dim]")
 
 if __name__ == "__main__":
     app()
