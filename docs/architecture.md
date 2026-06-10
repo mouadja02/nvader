@@ -39,15 +39,17 @@ src/nvidia_agentic_research_engineer/
 ├── evaluation/         # Eval harnesses, metrics, reports (planned)
 ├── guardrails/         # Input/output guardrails, NeMo adapter (planned)
 ├── ingestion/          # Document loaders, chunking, indexing
-│   ├── loaders.py      # load_text_file, load_markdown_file
+│   ├── loaders.py      # load_text_file, load_markdown_file, load_file
 │   └── chunking.py     # chunk_text, chunk_document, chunk_documents
 ├── memory/             # Conversation & long-term memory stores (planned)
 ├── nvidia/             # NVIDIA platform integrations (NIM, etc.) (planned)
 ├── retrieval/          # Vector search & RAG retrieval logic
 │   ├── models.py       # SearchResult, RetrievalQuery, RetrievalConfig
 │   ├── embeddings.py   # EmbedderProtocol, HashEmbedder, Embedder, get_embedder
-│   └── vector_store.py # cosine_similarity, InMemoryVectorStore, RetrievalResult
-└── tools/              # Tool definitions & registry (planned)
+│   ├── vector_store.py # cosine_similarity, InMemoryVectorStore, RetrievalResult
+│   └── pipeline.py     # supported_files, build_vector_store_from_path, search_path
+└── tools/
+    └── convert2md.py   # pdf_to_markdown — MarkItDown + NVIDIA NIM LLM OCR
 ```
 
 ## Implemented Components
@@ -56,10 +58,20 @@ src/nvidia_agentic_research_engineer/
 
 Entry point registered as `nvader` in `pyproject.toml`. Built with **Typer** + **Rich**.
 
-| Command          | Description                              |
-|------------------|------------------------------------------|
-| `nvader info`    | Show project identity and configuration  |
-| `nvader roadmap` | Print the 8-week certification roadmap   |
+| Command | Description |
+|---|---|
+| `nvader info` | Show project identity and configuration |
+| `nvader roadmap` | Print the 8-week certification roadmap |
+| `nvader search <path> <query>` | Index all supported files under `<path>` and return ranked results |
+
+`nvader search` options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--top-k` / `-k` | `5` | Number of results |
+| `--chunk-size` | `500` | Characters per chunk |
+| `--chunk-overlap` | `100` | Overlap between chunks |
+| `--reconvert` | off | Force PDF re-conversion even if cached `.md` exists |
 
 ### Configuration (`config.py`)
 
@@ -92,13 +104,24 @@ Two Pydantic models:
 - **`embeddings.py`**:
   - `EmbedderProtocol` — `@runtime_checkable` Protocol; any class with `embed_texts` + `embed_query` satisfies it.
   - `HashEmbedder` — fully offline, SHA-256-based, 384-dim deterministic embedder (stable across processes; all dimensions carry independent signal).
-  - `Embedder` — NVIDIA NIM OpenAI-compatible endpoint wrapper; lazy-imports `openai` to stay testable without the package installed.
+  - `Embedder` — **NVIDIA NIM** OpenAI-compatible endpoint wrapper (`nvidia/nv-embed-v1`); lazy-imports `openai` to stay testable without the package installed.
   - `get_embedder(model, api_key)` — factory: returns `Embedder` when `NVIDIA_API_KEY` is set, else `HashEmbedder`.
 
 - **`vector_store.py`**:
   - `cosine_similarity(a, b)` — dependency-free cosine similarity helper; raises `ValueError` on mismatched lengths, returns `0.0` for zero-norm vectors.
   - `InMemoryVectorStore` — stores `(DocumentChunk, embedding)` pairs; `add_chunks()` embeds and indexes chunks; `search(query, top_k)` returns ranked `RetrievalResult` list.
   - `RetrievalResult` — frozen dataclass: `chunk`, `score`, `rank`; preserves source, offsets, chunk ID, and metadata for full attribution.
+
+- **`pipeline.py`**:
+  - `supported_files(path)` — discovers all `.txt`, `.md`, `.pdf` files from a file or directory (recursive).
+  - `build_vector_store_from_path(path, *, chunk_size, chunk_overlap, embedder, store, reconvert)` — loads, chunks, embeds, and indexes all supported files. PDFs are converted to Markdown via `convert2md.pdf_to_markdown()` and cached; `reconvert=True` forces re-conversion.
+  - `search_path(path, query, top_k, chunk_size, chunk_overlap, reconvert)` — end-to-end convenience function: indexes a path then returns ranked `RetrievalResult` list.
+
+### PDF Processing (`tools/convert2md.py`)
+
+- Converts PDF files to Markdown using [MarkItDown](https://github.com/microsoft/markitdown) (`markitdown[pdf]` + optional `markitdown-ocr` plugin).
+- Uses the NVIDIA NIM LLM client (`nvidia/nemotron-nano-12b-v2-vl`) for LLM-assisted image description and OCR.
+- The resulting `.md` is written next to the source PDF and **reused** on subsequent runs unless `--reconvert` is passed.
 
 ## Planned Modules (Stubbed)
 
@@ -118,21 +141,30 @@ All modules below exist as empty packages, mapped to NVIDIA certification domain
 
 Current flow:
 
-1. Load raw files (`.txt`, `.md`) from local resources.
-2. Normalize them into typed `Document` objects (SHA-256 ID, UTC timestamp).
-3. Split documents into `DocumentChunk` objects with character offsets.
-4. Preserve source, metadata, and stable IDs for downstream retrieval.
-5. Chunks are embedded via `HashEmbedder` (offline) or `Embedder` (NVIDIA NIM).
-6. Embedded chunks are indexed in `InMemoryVectorStore`.
-7. Queries are embedded and ranked by cosine similarity, returning top-k `RetrievalResult` objects with full source attribution.
+1. Discover supported files (`.txt`, `.md`, `.pdf`) from a path via `supported_files()`.
+2. **PDF files** are converted to Markdown by MarkItDown + NVIDIA NIM LLM and the result cached as `<stem>.md`.
+3. Load files into typed `Document` objects (SHA-256 ID, UTC timestamp).
+4. Split documents into `DocumentChunk` objects with character offsets.
+5. Preserve source, metadata, and stable IDs for downstream retrieval.
+6. Chunks are embedded via `HashEmbedder` (offline) or `Embedder` (NVIDIA NIM `nv-embed-v1`).
+7. Embedded chunks are indexed in `InMemoryVectorStore`.
+8. Queries are embedded and ranked by cosine similarity, returning top-k `RetrievalResult` objects with full source attribution.
 
 ```text
-file -> Document -> DocumentChunk -> embedding -> vector store -> top-k RetrievalResult
+file -> (PDF→MD conversion) -> Document -> DocumentChunk -> embedding -> vector store -> top-k RetrievalResult
 ```
 
 ```mermaid
 flowchart TD
     A["📁 files / docs / repos"] --> B
+    A --> PDF
+
+    PDF["📄 .pdf file"]
+    PDF --> CONV
+
+    CONV["tools/convert2md.py\nMarkItDown + NVIDIA NIM LLM\nnvidia/nemotron-nano-12b-v2-vl"]
+    CONV --> CACHE["cached .md file"]
+    CACHE --> B
 
     B["loaders.py\nload_text_file · load_markdown_file"]
     B --> C
@@ -146,7 +178,7 @@ flowchart TD
     E["DocumentChunk[ ]\nid · chunk_index · start_char · end_char"]
     E --> F
 
-    F["embeddings.py\nHashEmbedder · Embedder"]
+    F["embeddings.py\nHashEmbedder (offline) · Embedder (NVIDIA NIM nv-embed-v1)"]
     F --> G
 
     G["list[list[float]]\n384-dim vectors"]
@@ -177,7 +209,9 @@ data/
 | `rich ≥13.7`   | Terminal formatting & panels             |
 | `python-dotenv`| `.env` file loading                      |
 | `toml`         | `pyproject.toml` parsing                 |
-| `openai`       | NVIDIA NIM embedding API (optional)      |
+| `openai`       | NVIDIA NIM embedding + LLM APIs          |
+| `markitdown[pdf]` | PDF → Markdown conversion             |
+| `markitdown-ocr` | LLM-based OCR plugin for MarkItDown (optional) |
 
 Dev: `pytest ≥8.0`, `ruff ≥0.5`.
 
@@ -189,8 +223,9 @@ Dev: `pytest ≥8.0`, `ruff ≥0.5`.
 | `test_ingestion_loaders.py`   | `load_text_file`, `load_markdown_file`         | —     |
 | `test_chunking.py`            | `chunk_text`, `chunk_document`, `chunk_documents` | —  |
 | `test_retrieval_embeddings.py`| `HashEmbedder`, `Embedder`, `EmbedderProtocol`, `SearchResult`, `RetrievalQuery`, `RetrievalConfig` | 45 |
-| `test_retrieval_vector_store.py` | `cosine_similarity`, `InMemoryVectorStore`, `RetrievalResult` | — |
-| `test_cli.py`                 | `nvader info`, `nvader roadmap`                | —     |
+| `test_retrieval_vector_store.py` | `cosine_similarity`, `InMemoryVectorStore`, `RetrievalResult` | 15 |
+| `test_retrieval_pipeline.py`  | `supported_files`, `build_vector_store_from_path` (PDF caching, `--reconvert`), `search_path` relevance | 24 |
+| `test_cli.py`                 | `nvader info`, `nvader roadmap`, `nvader search` | 3   |
 
 ## Build Roadmap Alignment
 

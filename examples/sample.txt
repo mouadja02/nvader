@@ -36,7 +36,7 @@ Subject: Re: HTML::TextToHTML
 Date: Sun, 12 May 2002 10:01:10 -0500
 
 Bozo wrote:
-BtC> Can you post an example text file with its html'ed output?
+BtC> Can you post an example text file in RISC-V?
 BtC> That would provide a much better first glance at what it does
 BtC> without having to look through and see what the perl code does.
 

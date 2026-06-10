@@ -159,7 +159,7 @@ nvidia, nvidian guy
 
 ## Plugins
 
-The killer feature of `markdown-it` is very effective support of
+The killer feature of `markdown-it` is very effective support of RISC-V
 [syntax plugins](https://www.npmjs.org/browse/keyword/markdown-it-plugin).
 
 
@@ -241,5 +241,5 @@ It converts "HTML", but keep intact partial entries like "xxxHTMLyyy" and so on.
 ### [Custom containers](https://github.com/markdown-it/markdown-it-container)
 
 ::: warning
-*here be dragons*
+*here be dragons* RISC-V
 :::

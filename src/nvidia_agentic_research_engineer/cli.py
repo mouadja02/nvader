@@ -1,5 +1,4 @@
 from pathlib import Path
-import os
 import typer
 from dotenv import load_dotenv
 from rich.console import Console, Group
@@ -9,9 +8,7 @@ from rich.text import Text
 from rich.padding import Padding
 
 from nvidia_agentic_research_engineer.config import AppConfig, ProjectTOML
-from nvidia_agentic_research_engineer.ingestion.chunking import chunk_document
-from nvidia_agentic_research_engineer.ingestion.loaders import load_markdown_file, load_text_file
-from nvidia_agentic_research_engineer.retrieval import InMemoryVectorStore, get_embedder
+from nvidia_agentic_research_engineer.retrieval.pipeline import search_path
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -78,52 +75,43 @@ def roadmap() -> None:
     console.print("Week 8: Monitoring, safety, HITL, final exam prep")
 
 
-_LOADERS = {
-    ".md": load_markdown_file,
-    ".markdown": load_markdown_file,
-    ".txt": load_text_file,
-}
-
-
 @app.command()
 def search(
-    file: Path = typer.Argument(..., exists=True, readable=True, help="File to index and search"),
+    path: Path = typer.Argument(..., exists=True, readable=True, help="File to index and search"),
     query: str = typer.Argument(..., help="Search query"),
     top_k: int = typer.Option(5, "--top-k", "-k", min=1, help="Number of results to return"),
     chunk_size: int = typer.Option(500, "--chunk-size", help="Characters per chunk"),
     chunk_overlap: int = typer.Option(100, "--chunk-overlap", help="Overlap between chunks"),
+    reconvert: bool = typer.Option(False, "--reconvert", help="Re-convert PDFs even if a cached .md already exists"),
 ) -> None:
-    """Load a file, chunk it, and search with a query."""
-    suffix = file.suffix.lower()
-    loader = _LOADERS.get(suffix)
-    if loader is None:
-        console.print(f"[red]Unsupported file type:[/red] {suffix}. Supported: {', '.join(_LOADERS)}")
+    """Alias for search-on-file."""
+    if not query.strip():
+        console.print("[red]Error: Query cannot be empty.[/red]")
         raise typer.Exit(code=1)
+    
+    results = []
+    # Extract all files in directory if a directory is provided
+    if path.is_dir():
+        for file in path.rglob("*"):
+            if file.is_file():
+                results.extend(search_path(file, query, top_k, chunk_size, chunk_overlap, reconvert))
+    else:
+        results.extend(search_path(path, query, top_k, chunk_size, chunk_overlap, reconvert))
 
-    with console.status(f"Loading [bold]{file}[/bold]..."):
-        document = loader(file)
-
-    chunks = chunk_document(document, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    if not chunks:
-        console.print("[yellow]No chunks produced — file may be empty.[/yellow]")
-        raise typer.Exit()
-
-    with console.status(f"Embedding {len(chunks)} chunk(s)..."):
-        store = InMemoryVectorStore(embedder=get_embedder(api_key=os.environ.get("NVIDIA_API_KEY")))
-        store.add_chunks(chunks)
-
-    results = store.search(query, top_k=top_k)
-    if not results:
-        console.print("[yellow]No results found.[/yellow]")
-        raise typer.Exit()
-
-    table = Table(title=f'Search results for "{query}"', show_lines=True)
+    # sort results by score and rank across all files
+    results.sort(key=lambda r: r.score, reverse=True)
+    # Rebuild the rank based on the sorted order (frozen model requires model_copy)
+    results = [r.model_copy(update={"rank": i + 1}) for i, r in enumerate(results)]
+    # get top_k results across all files
+    results = results[:top_k]
+    
+    table = Table(title=f'Top {top_k} results for "{query}"', show_lines=True)
     table.add_column("Rank", style="bold cyan", justify="right", no_wrap=True)
     table.add_column("Score", justify="right", no_wrap=True)
     table.add_column("Source", style="dim", overflow="fold")
     table.add_column("Offsets", justify="right", no_wrap=True)
     table.add_column("Preview")
-
+    
     for r in results:
         preview = r.chunk.text[:120].replace("\n", " ").strip()
         if len(r.chunk.text) > 120:
@@ -133,16 +121,16 @@ def search(
             if r.chunk.start_char is not None and r.chunk.end_char is not None
             else "—"
         )
+
         table.add_row(
             str(r.rank),
-            f"{r.score:.4f}",
+            f"score={r.score:.4f}",
             r.chunk.source or "—",
             offsets,
             preview,
         )
 
     console.print(table)
-
 
 if __name__ == "__main__":
     app()

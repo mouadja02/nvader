@@ -23,3 +23,11 @@ def load_markdown_file(file_path: Path) -> Document:
         source=str(file_path),
         document_type="markdown",
     )
+
+def load_file(file_path: Path) -> Document:
+    if file_path.suffix.lower() == ".txt":
+        return load_text_file(file_path)
+    elif file_path.suffix.lower() == ".md":
+        return load_markdown_file(file_path)
+    else:
+        raise ValueError(f"Unsupported file type: {file_path.suffix}")

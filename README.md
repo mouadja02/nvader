@@ -41,7 +41,7 @@ It helps turn technical resources into grounded answers, implementation plans, c
 
 ## Quickstart
 
-**Prerequisites:** Python 3.11+, `make` (Linux/macOS built-in; Windows: install via `choco install make` or use Git Bash).
+**Prerequisites:** Python 3.11+, `make` (Linux/macOS built-in; Windows: use `make.ps1`).
 
 ```bash
 # 1. Clone the repo
@@ -54,7 +54,8 @@ source .venv/bin/activate        # Linux / macOS
 # .venv\Scripts\activate          # Windows (PowerShell)
 
 # 3. Install the package with dev dependencies
-make install
+make install          # Linux/macOS
+.\make.ps1 install    # Windows PowerShell
 
 # 4. Verify everything works
 make test
@@ -69,12 +70,39 @@ nvader roadmap
 
 Current ingestion capabilities:
 
-- Load `.txt` and `.md` files into typed `Document` objects.
+- Load `.txt`, `.md`, and `.pdf` files into typed `Document` objects.
+- **PDF processing**: PDFs are automatically converted to Markdown using [MarkItDown](https://github.com/microsoft/markitdown) (with optional LLM-based OCR via the `markitdown-ocr` plugin). The converted `.md` is cached alongside the original PDF for fast re-use.
 - SHA-256 content-derived stable IDs (reproducible across runs).
 - Split documents into `DocumentChunk` objects with character offsets.
 - Preserve source, metadata, and chunk index for downstream retrieval.
 - Offline deterministic embeddings via `HashEmbedder` (SHA-256, 384-dim).
-- NVIDIA NIM embedding endpoint via `Embedder` (OpenAI-compatible API, requires `NVIDIA_API_KEY`).
+- **NVIDIA NIM embeddings** via `Embedder` (OpenAI-compatible API, requires `NVIDIA_API_KEY`). When the key is present `get_embedder()` automatically selects the NIM endpoint; otherwise falls back to `HashEmbedder` for fully offline use.
+
+## Local Retrieval Demo
+
+```bash
+nvader search examples "agentic AI certification" --top-k 3
+```
+
+This builds an offline in-memory retrieval index from all supported files (`.txt`, `.md`, `.pdf`) under the given path using deterministic hash embeddings, then returns source-attributed matching chunks ranked by cosine similarity.
+
+Key options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--top-k` / `-k` | `5` | Number of results to return |
+| `--chunk-size` | `500` | Characters per chunk |
+| `--chunk-overlap` | `100` | Overlap between consecutive chunks |
+| `--reconvert` | off | Re-run PDF→Markdown conversion even if a cached `.md` exists |
+
+```bash
+# Use NVIDIA NIM embeddings (set your key first)
+export NVIDIA_API_KEY=nvapi-...
+nvader search docs "multi-agent orchestration" --top-k 5
+
+# Force re-conversion of PDFs (e.g. after updating the source PDF)
+nvader search data/raw "deployment" --top-k 3 --reconvert
+```
 
 ## Developer Workflow
 
@@ -88,6 +116,8 @@ All commands run through the `.venv` Python automatically via the Makefile:
 | `make format`  | Auto-format code with Ruff                        |
 | `make check`   | Run lint + tests together                         |
 | `make clean`   | Remove `.pytest_cache` and `__pycache__` dirs     |
+
+On Windows PowerShell, replace `make <target>` with `.\make.ps1 <target>`.
 
 ## Current Status
 
@@ -109,18 +139,33 @@ All commands run through the `.venv` Python automatically via the Makefile:
 **Retrieval (`src/nvidia_agentic_research_engineer/retrieval/`)**
 - `EmbedderProtocol` — `@runtime_checkable` Protocol for any embedder implementation
 - `HashEmbedder` — offline SHA-256-based deterministic embedder (384 dims, PYTHONHASHSEED-stable)
-- `Embedder` — NVIDIA NIM OpenAI-compatible embedding endpoint wrapper; lazy-imports `openai`
+- `Embedder` — NVIDIA NIM OpenAI-compatible embedding endpoint wrapper (`nvidia/nv-embed-v1`); lazy-imports `openai`
 - `get_embedder(model, api_key)` — factory returning `Embedder` if `NVIDIA_API_KEY` is set, else `HashEmbedder`
 - `SearchResult` — frozen Pydantic model for retrieval results
 - `RetrievalQuery` — typed query model with `top_k` bounds validation
 - `RetrievalConfig` — embedding model, index, threshold, and hybrid-search configuration
-- In-memory vector retrieval over embedded chunks.
-- Cosine similarity ranking.
-- Source-attributed retrieval results for future RAG answers.
+- `InMemoryVectorStore` — in-memory vector index with cosine similarity ranking
+- `RetrievalResult` — frozen result with `rank`, `score`, `chunk`, source, and character offsets
+- `cosine_similarity(a, b)` — dependency-free helper; safe on zero-norm vectors
+
+**Pipeline (`src/nvidia_agentic_research_engineer/retrieval/pipeline.py`)**
+- `supported_files(path)` — discovers `.txt`, `.md`, `.pdf` files from a file or directory
+- `build_vector_store_from_path(path, ...)` — loads, chunks, embeds, and indexes all supported files into an `InMemoryVectorStore`
+- `search_path(path, query, ...)` — end-to-end search: index a path and return ranked `RetrievalResult` list
+
+**PDF Processing (`src/nvidia_agentic_research_engineer/tools/convert2md.py`)**
+- Converts PDF files to Markdown using [MarkItDown](https://github.com/microsoft/markitdown) with NVIDIA NIM LLM client (`nvidia/nemotron-nano-12b-v2-vl`) for LLM-assisted OCR
+- Converted `.md` is **cached** alongside the original PDF — subsequent calls reuse it without re-converting
+- Pass `--reconvert` on the CLI (or `reconvert=True` in code) to force re-conversion
 
 **CLI (`nvader`)**
 - `nvader info` — displays project identity and active config
 - `nvader roadmap` — prints the 8-week certification build plan
+- `nvader search <path> <query>` — indexes all supported files under `<path>` and returns top-k source-attributed results
+  - `--top-k` / `-k`: number of results (default 5)
+  - `--chunk-size`: characters per chunk (default 500)
+  - `--chunk-overlap`: overlap between chunks (default 100)
+  - `--reconvert`: force PDF re-conversion ignoring cache
 
 **Config (`src/nvidia_agentic_research_engineer/config.py`)**
 - `AppConfig` — typed settings for data directories, retrieval, citations, and retries
@@ -129,9 +174,11 @@ All commands run through the `.venv` Python automatically via the Makefile:
 **Tests (`tests/`)**
 - `test_documents.py` — Document creation, type validation, preview truncation
 - `test_ingestion_loaders.py` — text and Markdown file loading
-- `test_chunking.py` — chunk_text, chunk_document, chunk_documents
-- `test_retrieval_embeddings.py` — 45 tests: HashEmbedder (SHA-256 stability, dimensions, determinism), Embedder (mock API, error handling), EmbedderProtocol conformance, SearchResult/RetrievalQuery/RetrievalConfig models
-- `test_cli.py` — `info` and `roadmap` CLI command assertions
+- `test_chunking.py` — `chunk_text`, `chunk_document`, `chunk_documents`
+- `test_retrieval_embeddings.py` — 45 tests: HashEmbedder, Embedder (mock API), EmbedderProtocol, SearchResult/RetrievalQuery/RetrievalConfig
+- `test_retrieval_vector_store.py` — `cosine_similarity`, `InMemoryVectorStore`, `RetrievalResult`
+- `test_retrieval_pipeline.py` — 24 tests: `supported_files`, `build_vector_store_from_path` (incl. PDF caching, `--reconvert`), `search_path` relevance ranking
+- `test_cli.py` — `info`, `roadmap`, `search` CLI command assertions
 
 ### In Progress / Up Next
 
@@ -150,10 +197,18 @@ All commands run through the `.venv` Python automatically via the Makefile:
 ## Current RAG Capability
 
 ```
-.txt/.md file
+.txt / .md file
     -> Document
     -> DocumentChunk
-    -> HashEmbedder
+    -> HashEmbedder (offline) | Embedder (NVIDIA NIM, nvidia/nv-embed-v1)
+    -> InMemoryVectorStore
+    -> top-k RetrievalResult with source attribution
+
+.pdf file
+    -> MarkItDown (NVIDIA NIM LLM OCR, nvidia/nemotron-nano-12b-v2-vl)
+    -> cached .md file
+    -> Document -> DocumentChunk
+    -> HashEmbedder | Embedder
     -> InMemoryVectorStore
     -> top-k RetrievalResult with source attribution
 ```
