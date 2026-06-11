@@ -9,7 +9,9 @@ from rich.text import Text
 from rich.padding import Padding
 
 from nvidia_agentic_research_engineer.config import AppConfig, ProjectTOML
-from nvidia_agentic_research_engineer.retrieval.pipeline import search_path
+from nvidia_agentic_research_engineer.retrieval.pipeline import search_path, build_vector_store_from_path
+from nvidia_agentic_research_engineer.tools.registry import Tool, ToolParameter, ToolRegistry
+from nvidia_agentic_research_engineer.agents.react import ReActAgent
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -153,6 +155,106 @@ def search(
         ]
         output.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         console.print(f"[dim]Results saved to {output}[/dim]")
+
+
+@app.command()
+def agent(
+    question: str = typer.Argument(..., help="The question to ask the agent"),
+    knowledge_path: Path = typer.Option(
+        Path("examples"),
+        "--knowledge-path",
+        "-p",
+        help="Path to the knowledge base files",
+    ),
+    max_steps: int = typer.Option(10, "--max-steps", "-s", min=1, help="Maximum reasoning steps"),
+    top_k: int = typer.Option(5, "--top-k", "-k", min=1, help="Number of search results per query"),
+    chunk_size: int = typer.Option(500, "--chunk-size", help="Characters per chunk"),
+    chunk_overlap: int = typer.Option(100, "--chunk-overlap", help="Overlap between chunks"),
+) -> None:
+    """Run the ReAct agent to answer a question using the knowledge base."""
+    if not question.strip():
+        console.print("[red]Error: Question cannot be empty.[/red]")
+        raise typer.Exit(code=1)
+
+    if not knowledge_path.exists():
+        console.print(f"[red]Error: Knowledge path '{knowledge_path}' does not exist.[/red]")
+        raise typer.Exit(code=1)
+
+    # Build vector store from knowledge path
+    with console.status("Building knowledge base index..."):
+        store = build_vector_store_from_path(
+            knowledge_path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+    # Create search tool wrapping the vector store
+    def search_knowledge_base(query: str) -> str:
+        results = store.search(query, top_k=top_k)
+        if not results:
+            return "No relevant results found."
+        parts = []
+        for r in results:
+            source = r.chunk.source or "unknown"
+            preview = r.chunk.text[:300].replace("\n", " ").strip()
+            parts.append(f"[score={r.score:.4f} source={source}] {preview}")
+        return "\n---\n".join(parts)
+
+    registry = ToolRegistry()
+    registry.register_tool(
+        Tool(
+            name="search_knowledge_base",
+            description="Search the ingested knowledge base for relevant passages. Use this to find information about topics in the documents.",
+            parameters=[
+                ToolParameter(
+                    name="query",
+                    type="str",
+                    description="The search query string",
+                    required=True,
+                )
+            ],
+            func=search_knowledge_base,
+        )
+    )
+
+    # Instantiate and run the agent
+    react_agent = ReActAgent(name="nvader-react", registry=registry)
+
+    with console.status("Agent is reasoning..."):
+        run = react_agent.execute(question, max_steps=max_steps)
+
+    # Display run trace
+    trace_table = Table(title="Agent Run Trace", show_lines=True)
+    trace_table.add_column("Step", style="bold cyan", justify="right", no_wrap=True)
+    trace_table.add_column("State", no_wrap=True)
+    trace_table.add_column("Thought", overflow="fold")
+    trace_table.add_column("Action", no_wrap=True)
+    trace_table.add_column("Observation / Error", overflow="fold")
+
+    for s in run.steps:
+        thought_preview = (s.thought or "—")[:200]
+        obs_preview = (s.observation or s.error or "—")[:200]
+        trace_table.add_row(
+            str(s.step_number),
+            s.state.value,
+            thought_preview,
+            s.action or "—",
+            obs_preview,
+        )
+
+    console.print(trace_table)
+
+    # Display final answer
+    status_style = "bold green" if run.success else "bold red"
+    status_text = "SUCCESS" if run.success else "FAILED"
+    console.print(
+        Panel(
+            run.final_answer or "No final answer produced.",
+            title=f"Final Answer [{status_text}]",
+            border_style=status_style,
+        )
+    )
+
 
 if __name__ == "__main__":
     app()

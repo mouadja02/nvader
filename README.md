@@ -104,6 +104,78 @@ nvader search docs "multi-agent orchestration" --top-k 5
 nvader search data/raw "deployment" --top-k 3 --reconvert
 ```
 
+## Agent Architecture
+
+The project includes a **ReAct (Reason + Act) agent** that combines LLM reasoning with tool execution in an iterative loop.
+
+### ReAct Loop
+
+```
+User Question
+    │
+    ▼
+┌────────────┐
+│   THINK    │◄─── LLM generates Thought + Action
+│  (LLM)     │
+└─────┬──────┘
+      │
+      ▼
+┌────────────┐
+│    ACT     │◄─── Execute tool from registry
+│  (Tool)    │
+└─────┬──────┘
+      │
+      ▼
+┌────────────┐
+│  OBSERVE   │◄─── Feed result back to LLM
+│ (Result)   │
+└─────┬──────┘
+      │
+      ▼
+  Loop until "Final Answer" or max_steps
+```
+
+1. The agent constructs a system prompt listing available tools (via `ToolRegistry.generate_tools_prompt()`)
+2. The LLM responds with `Thought:` / `Action:` / `Action Input:` markers
+3. The agent executes the named tool and feeds the `Observation:` back
+4. On `Final Answer:`, the loop terminates and returns the result
+5. If a tool errors, the agent retries once, then reports the error as an observation and continues reasoning
+6. If `max_steps` is exceeded, the agent stops and reports failure
+
+### Tool Registry
+
+Tools are registered as Pydantic `Tool` models with typed `ToolParameter` schemas. The `ToolRegistry` handles:
+
+- **Registration**: `register_tool(tool)` — add a tool with name, description, parameters, and callable
+- **Discovery**: `generate_tools_prompt()` — renders all tools into an LLM-friendly prompt
+- **Execution**: `execute_tool(name, **kwargs)` — validates parameters and invokes the callable
+
+### Running the Agent
+
+```bash
+# Set your NVIDIA API key
+export NVIDIA_API_KEY=nvapi-...
+
+# Ask a question against the examples/ knowledge base
+nvader agent "What are the key concepts in the NVIDIA study guide?"
+
+# Customise the knowledge path and search parameters
+nvader agent "Explain multi-agent workflows" \
+    --knowledge-path docs/ \
+    --max-steps 15 \
+    --top-k 3
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--knowledge-path` / `-p` | `examples/` | Path to the knowledge base files |
+| `--max-steps` / `-s` | `10` | Maximum reasoning steps |
+| `--top-k` / `-k` | `5` | Search results per tool query |
+| `--chunk-size` | `500` | Characters per chunk |
+| `--chunk-overlap` | `100` | Overlap between chunks |
+
+The agent displays a **run trace table** showing each step's state, thought, action, and observation, followed by the final answer in a panel.
+
 ## Developer Workflow
 
 All commands run through the `.venv` Python automatically via the Makefile:
