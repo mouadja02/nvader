@@ -257,3 +257,77 @@ class TestReActAgent:
 
         assert run.success is True
         assert "error" in (run.steps[0].observation or "").lower() or "not found" in (run.steps[0].observation or "").lower()
+
+
+# ===========================================================================
+# Trace metadata tests (duration_ms, retry_count)
+# ===========================================================================
+
+class TestTraceMetadata:
+    def test_run_duration_ms(self):
+        """AgentRun.duration_ms is populated after execute()."""
+        client = _make_fake_llm_client([
+            "Thought: Done.\nFinal Answer: quick."
+        ])
+        registry = ToolRegistry()
+        agent = ReActAgent(name="test", registry=registry, llm_client=client)
+        run = agent.execute("fast question", max_steps=3)
+
+        assert run.duration_ms is not None
+        assert run.duration_ms >= 0
+
+    def test_step_duration_ms(self):
+        """Every step has a non-negative duration_ms."""
+        client = _make_fake_llm_client([
+            'Thought: Search first.\nAction: echo\nAction Input: {"text": "hi"}',
+            "Thought: Got it.\nFinal Answer: done.",
+        ])
+        registry = ToolRegistry()
+        registry.register_tool(_make_echo_tool())
+        agent = ReActAgent(name="test", registry=registry, llm_client=client)
+        run = agent.execute("Two step run", max_steps=5)
+
+        assert all(s.duration_ms is not None for s in run.steps)
+        assert all(s.duration_ms >= 0 for s in run.steps)
+
+    def test_retry_count_on_success(self):
+        """Successful tool call has retry_count == 0."""
+        client = _make_fake_llm_client([
+            'Thought: echo.\nAction: echo\nAction Input: {"text": "ok"}',
+            "Thought: done.\nFinal Answer: ok.",
+        ])
+        registry = ToolRegistry()
+        registry.register_tool(_make_echo_tool())
+        agent = ReActAgent(name="test", registry=registry, llm_client=client)
+        run = agent.execute("echo", max_steps=5)
+
+        assert run.steps[0].retry_count == 0
+
+    def test_retry_count_on_failure(self):
+        """Failed tool call has retry_count reflecting exhausted retries."""
+        client = _make_fake_llm_client([
+            'Thought: try.\nAction: fail_tool\nAction Input: {}',
+            "Thought: failed.\nFinal Answer: broken.",
+        ])
+        registry = ToolRegistry()
+        registry.register_tool(_make_failing_tool())
+        agent = ReActAgent(name="test", registry=registry, llm_client=client)
+        run = agent.execute("fail", max_steps=5)
+
+        assert run.steps[0].retry_count >= 1
+        assert run.steps[0].observation is not None
+        assert "error" in run.steps[0].observation.lower()
+
+    def test_failed_step_has_error(self):
+        """A failed tool step populates the error field."""
+        client = _make_fake_llm_client([
+            'Thought: try.\nAction: fail_tool\nAction Input: {}',
+            "Thought: failed.\nFinal Answer: broken.",
+        ])
+        registry = ToolRegistry()
+        registry.register_tool(_make_failing_tool())
+        agent = ReActAgent(name="test", registry=registry, llm_client=client)
+        run = agent.execute("fail", max_steps=5)
+
+        assert run.steps[0].error is not None
+        assert "boom" in run.steps[0].error

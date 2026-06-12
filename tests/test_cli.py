@@ -1,9 +1,12 @@
 from pathlib import Path
 import json
+from datetime import datetime
 
 from typer.testing import CliRunner
 
 from nvidia_agentic_research_engineer.cli import app
+from nvidia_agentic_research_engineer.agents.base import AgentRun, AgentState, AgentStep
+from nvidia_agentic_research_engineer.tools.tracing import write_agent_trace
 
 runner = CliRunner()
 
@@ -74,3 +77,77 @@ def test_search_command_json_output(tmp_path) -> None:
     # scores must be descending
     scores = [r["score"] for r in data]
     assert scores == sorted(scores, reverse=True)
+
+
+# ===========================================================================
+# write_agent_trace tests
+# ===========================================================================
+
+
+def _make_sample_run() -> AgentRun:
+    """Build a minimal AgentRun for serialization tests."""
+    now = datetime.now()
+    step = AgentStep(
+        step_number=1,
+        state=AgentState.FINISHED,
+        thought="I know.",
+        action="echo",
+        action_input={"text": "hi"},
+        observation="Echo: hi",
+        retry_count=0,
+        duration_ms=12.34,
+        timestamp=now.isoformat(),
+    )
+    run = AgentRun(
+        agent_name="test-agent",
+        task="Say hi",
+        steps=[step],
+        final_answer="Echo: hi",
+        success=True,
+        started_at=now,
+        finished_at=now,
+        duration_ms=42.0,
+    )
+    return run
+
+
+def test_write_agent_trace_creates_file(tmp_path) -> None:
+    run = _make_sample_run()
+    out = tmp_path / "trace.json"
+    write_agent_trace(run, out)
+
+    assert out.exists()
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["agent_name"] == "test-agent"
+    assert data["task"] == "Say hi"
+    assert data["success"] is True
+    assert data["final_answer"] == "Echo: hi"
+    assert data["duration_ms"] == 42.0
+
+
+def test_write_agent_trace_step_fields(tmp_path) -> None:
+    run = _make_sample_run()
+    out = tmp_path / "sub" / "trace.json"
+    write_agent_trace(run, out)
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    step = data["steps"][0]
+    assert step["step_number"] == 1
+    assert step["state"] == "finished"
+    assert step["thought"] == "I know."
+    assert step["action"] == "echo"
+    assert step["action_input"] == {"text": "hi"}
+    assert step["observation"] == "Echo: hi"
+    assert step["retry_count"] == 0
+    assert step["duration_ms"] == 12.34
+    assert step["timestamp"] is not None
+
+
+def test_write_agent_trace_timestamps(tmp_path) -> None:
+    run = _make_sample_run()
+    out = tmp_path / "trace.json"
+    write_agent_trace(run, out)
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["started_at"] is not None
+    assert data["finished_at"] is not None

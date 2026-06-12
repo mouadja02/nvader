@@ -10,6 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 from nvidia_agentic_research_engineer.tools.registry import ToolRegistry
 from pydantic import BaseModel
@@ -30,6 +31,8 @@ class AgentStep(BaseModel):
     action_input: Dict[str, Any] | None = None # parameters for the tool
     observation: str | None = None # result from the tool
     error: str | None = None # error message if any
+    retry_count: int = 0 # number of retries attempted
+    duration_ms: float | None = None # wall-clock time for this step
     timestamp: str | None = None # ISO format timestamp
 
 class AgentRun(BaseModel):
@@ -40,6 +43,15 @@ class AgentRun(BaseModel):
     success: bool = False
     started_at: datetime
     finished_at: datetime | None = None
+    duration_ms: float | None = None # total wall-clock time
+
+    def finish(self, run_start: float | None = None) -> None:
+        """Mark the run as finished and compute duration_ms."""
+        self.finished_at = datetime.now()
+        if run_start is not None:
+            self.duration_ms = round((perf_counter() - run_start) * 1000, 2)
+        else:
+            self.duration_ms = (self.finished_at - self.started_at).total_seconds() * 1000
 
 class BaseAgent(ABC):
     FINAL_ANSWER_ACTION = "final_answer"

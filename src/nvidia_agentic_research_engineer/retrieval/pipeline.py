@@ -38,18 +38,20 @@ def build_vector_store_from_path(path: Path,
 
     console = Console()
     for file in files:
-        with console.status(f"Processing {file}..."):
-            if file.suffix.lower() == ".pdf":
-                md_path = file.with_suffix(".md")
-                if reconvert or not md_path.exists():
-                    md_content = pdf_to_markdown(str(file))
-                    md_path.write_text(md_content, encoding="utf-8")
-                load_path = md_path
-            else:
-                load_path = file
-            document = load_file(load_path)
-            chunks = chunk_document(document, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            store.add_chunks(chunks)
+        console.print(f"  [dim]Processing[/dim] {file.name}", end="")
+        if file.suffix.lower() == ".pdf":
+            md_path = file.with_suffix(".md")
+            if reconvert or not md_path.exists():
+                console.print(" [dim](converting PDF → md)[/dim]", end="")
+                md_content = pdf_to_markdown(str(file))
+                md_path.write_text(md_content, encoding="utf-8")
+            load_path = md_path
+        else:
+            load_path = file
+        document = load_file(load_path)
+        chunks = chunk_document(document, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        store.add_chunks(chunks)
+        console.print(f" [dim]→ {len(chunks)} chunks[/dim]")
 
     return store
 

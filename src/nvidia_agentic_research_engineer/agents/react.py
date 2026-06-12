@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict, List
+from time import perf_counter, sleep
+from typing import Any, Callable, Dict, List
 
 from nvidia_agentic_research_engineer.agents.base import (
     AgentRun,
@@ -60,7 +61,7 @@ def _parse_llm_response(text: str) -> Dict[str, Any]:
         result["final_answer"] = final_match.group(1).strip()
         return result
 
-    action_match = re.search(r"Action:\s*(.+?)(?:\n|$)", text)
+    action_match = re.search(r"Action:\s*(.+?)(?:\s*Action Input:|\n|$)", text)
     if action_match:
         result["action"] = action_match.group(1).strip()
 
@@ -84,7 +85,7 @@ class ReActAgent(BaseAgent):
         registry: ToolRegistry,
         *,
         llm_client: Any = None,
-        model: str = "nvidia/nemotron-3-ultra-550b-a55b",
+        model: str = "openai/gpt-oss-120b",
         base_url: str = "https://integrate.api.nvidia.com/v1",
         api_key: str | None = None,
         temperature: float = 0.0,
@@ -108,13 +109,18 @@ class ReActAgent(BaseAgent):
     # Core loop
     # ------------------------------------------------------------------
 
-    def execute(self, task: str, max_steps: int = 10) -> AgentRun:
+    def execute(self, task: str, max_steps: int = 10, on_step: Callable[[str, AgentStep | None], None] | None = None) -> AgentRun:
+        run_start = perf_counter()
         run = AgentRun(
             agent_name=self.name,
             task=task,
             started_at=datetime.now(),
         )
         self._current_run = run
+
+        def _emit(event: str, step: AgentStep | None = None) -> None:
+            if on_step:
+                on_step(event, step)
 
         system_prompt = _SYSTEM_TEMPLATE.format(
             tools_prompt=self.registry.generate_tools_prompt(),
@@ -125,7 +131,9 @@ class ReActAgent(BaseAgent):
         ]
 
         for step_num in range(1, max_steps + 1):
+            step_start = perf_counter()
             # ---------- Think ----------
+            _emit("thinking", None)
             step = self._think(task, run.steps, messages=messages)
             step.step_number = step_num
 
@@ -136,9 +144,11 @@ class ReActAgent(BaseAgent):
             if "final_answer" in parsed:
                 step.state = AgentState.FINISHED
                 step.observation = parsed["final_answer"]
+                step.duration_ms = round((perf_counter() - step_start) * 1000, 2)
                 run.steps.append(step)
                 run.final_answer = parsed["final_answer"]
                 run.success = True
+                _emit("finished", step)
                 break
 
             # ---------- Action ----------
@@ -147,12 +157,15 @@ class ReActAgent(BaseAgent):
             if action_name:
                 step.action = action_name
                 step.action_input = action_input if isinstance(action_input, dict) else {}
-
+                _emit("tool_call", step)
                 step = self._execute_tool_with_retry(step)
+                _emit("tool_result", step)
             else:
                 step.state = AgentState.ERROR
                 step.error = "LLM response contained no Action or Final Answer."
+                _emit("error", step)
 
+            step.duration_ms = round((perf_counter() - step_start) * 1000, 2)
             run.steps.append(step)
 
             # Append assistant + observation to message history
@@ -169,7 +182,7 @@ class ReActAgent(BaseAgent):
             run.final_answer = "Max steps exceeded without reaching a final answer."
             run.success = False
 
-        run.finished_at = datetime.now()
+        run.finish(run_start)
         self._current_run = None
         return run
 
@@ -194,12 +207,24 @@ class ReActAgent(BaseAgent):
         if messages is None:
             messages = [{"role": "user", "content": task}]
 
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-        )
-        step.thought = response.choices[0].message.content
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                )
+                step.thought = response.choices[0].message.content
+                return step
+            except Exception as exc:
+                if "429" in str(exc) or "rate" in str(exc).lower():
+                    if attempt < max_retries:
+                        wait = 2 ** attempt  # 1s, 2s, 4s
+                        sleep(wait)
+                        continue
+                raise
+
         return step
 
     def _execute_tool_with_retry(self, step: AgentStep, max_retries: int = 1) -> AgentStep:
@@ -212,6 +237,7 @@ class ReActAgent(BaseAgent):
                 step.state = AgentState.OBSERVING
                 step.observation = str(result)
                 step.error = None
+                step.retry_count = attempt
                 return step
             except (ValueError, RuntimeError) as exc:
                 step.error = str(exc)
@@ -219,4 +245,5 @@ class ReActAgent(BaseAgent):
         # All retries exhausted — report error as observation so loop continues
         step.state = AgentState.OBSERVING
         step.observation = f"Tool error: {step.error}"
+        step.retry_count = max_retries
         return step

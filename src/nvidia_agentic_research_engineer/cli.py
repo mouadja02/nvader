@@ -12,6 +12,7 @@ from nvidia_agentic_research_engineer.config import AppConfig, ProjectTOML
 from nvidia_agentic_research_engineer.retrieval.pipeline import search_path, build_vector_store_from_path
 from nvidia_agentic_research_engineer.tools.registry import Tool, ToolParameter, ToolRegistry
 from nvidia_agentic_research_engineer.agents.react import ReActAgent
+from nvidia_agentic_research_engineer.tools.tracing import write_agent_trace
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -83,8 +84,8 @@ def search(
     path: Path = typer.Argument(..., exists=True, readable=True, help="File to index and search"),
     query: str = typer.Argument(..., help="Search query"),
     top_k: int = typer.Option(5, "--top-k", "-k", min=1, help="Number of results to return"),
-    chunk_size: int = typer.Option(500, "--chunk-size", help="Characters per chunk"),
-    chunk_overlap: int = typer.Option(100, "--chunk-overlap", help="Overlap between chunks"),
+    chunk_size: int = typer.Option(200, "--chunk-size", help="Characters per chunk"),
+    chunk_overlap: int = typer.Option(20, "--chunk-overlap", help="Overlap between chunks"),
     reconvert: bool = typer.Option(False, "--reconvert", help="Re-convert PDFs even if a cached .md already exists"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Write results as JSON to this file path"),
 ) -> None:
@@ -166,10 +167,11 @@ def agent(
         "-p",
         help="Path to the knowledge base files",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", "-s", min=1, help="Maximum reasoning steps"),
+    max_steps: int = typer.Option(5, "--max-steps", "-s", min=1, help="Maximum reasoning steps"),
     top_k: int = typer.Option(5, "--top-k", "-k", min=1, help="Number of search results per query"),
-    chunk_size: int = typer.Option(500, "--chunk-size", help="Characters per chunk"),
-    chunk_overlap: int = typer.Option(100, "--chunk-overlap", help="Overlap between chunks"),
+    chunk_size: int = typer.Option(200, "--chunk-size", help="Characters per chunk"),
+    chunk_overlap: int = typer.Option(20, "--chunk-overlap", help="Overlap between chunks"),
+    trace_output: Path | None = typer.Option(None, "--trace-output", "-t", help="Write the full agent run trace as JSON"),
 ) -> None:
     """Run the ReAct agent to answer a question using the knowledge base."""
     if not question.strip():
@@ -181,12 +183,13 @@ def agent(
         raise typer.Exit(code=1)
 
     # Build vector store from knowledge path
-    with console.status("Building knowledge base index..."):
-        store = build_vector_store_from_path(
-            knowledge_path,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
+    console.print(f"[bold]Indexing knowledge base:[/bold] {knowledge_path}")
+    store = build_vector_store_from_path(
+        knowledge_path,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    console.print("[green]✓[/green] Knowledge base ready\n")
 
     # Create search tool wrapping the vector store
     def search_knowledge_base(query: str) -> str:
@@ -217,11 +220,32 @@ def agent(
         )
     )
 
-    # Instantiate and run the agent
+    # Instantiate and run the agent with live progress
     react_agent = ReActAgent(name="nvader-react", registry=registry)
+    step_counter = {"n": 0}
 
-    with console.status("Agent is reasoning..."):
-        run = react_agent.execute(question, max_steps=max_steps)
+    def _on_step(event: str, step) -> None:
+        if event == "thinking":
+            step_counter["n"] += 1
+            console.print(f"  [bold cyan]Step {step_counter['n']}[/bold cyan] [dim]Thinking… (calling LLM)[/dim]")
+        elif event == "tool_call":
+            query_preview = ""
+            if step and step.action_input:
+                q = step.action_input.get("query", "")
+                if q:
+                    query_preview = f' query="{q[:60]}"'
+            console.print(f"           [yellow]→ Tool:[/yellow] {step.action}{query_preview}")
+        elif event == "tool_result":
+            obs = (step.observation or "")[:80].replace("\n", " ")
+            console.print(f"           [green]← Result:[/green] {obs}{'…' if len(step.observation or '') > 80 else ''}")
+        elif event == "error":
+            console.print(f"           [red]✗ Error:[/red] {step.error}")
+        elif event == "finished":
+            console.print("           [green]✓ Final answer reached[/green]")
+
+    console.print(f"[bold]Agent reasoning[/bold] (max {max_steps} steps):")
+    run = react_agent.execute(question, max_steps=max_steps, on_step=_on_step)
+    console.print()
 
     # Display run trace
     trace_table = Table(title="Agent Run Trace", show_lines=True)
@@ -244,6 +268,11 @@ def agent(
 
     console.print(trace_table)
 
+
+    if trace_output is not None:
+        write_agent_trace(run, trace_output)
+        console.print(f"[dim]Trace saved to {trace_output}[/dim]")
+
     # Display final answer
     status_style = "bold green" if run.success else "bold red"
     status_text = "SUCCESS" if run.success else "FAILED"
@@ -254,6 +283,7 @@ def agent(
             border_style=status_style,
         )
     )
+
 
 
 if __name__ == "__main__":

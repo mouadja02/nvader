@@ -239,3 +239,7 @@ The architecture is being built incrementally over 8 weeks:
 6. **Week 6** — Evaluation & tuning (`evaluation/`, `evals/`)
 7. **Week 7** — NVIDIA platform & deployment (`nvidia/`, `api/`)
 8. **Week 8** — Monitoring, safety, HITL, final exam prep (`guardrails/`, tracing)
+
+## ReAct Traces as a Cross-Cutting Concern
+
+ReAct execution traces (`data/traces/`) serve as the bridge between multiple downstream concerns: **evaluation** (measuring agent accuracy and tool use), **monitoring** (tracking latency, step counts, and error rates), **safety review** (auditing tool calls and LLM outputs for policy violations), **human oversight** (enabling reviewers to inspect reasoning chains), and **future dashboarding** (powering visual analytics over agent runs). By capturing every thought, action, observation, retry count, and timing in a structured JSON trace, the system provides a single source of truth that all of these layers can consume independently.
